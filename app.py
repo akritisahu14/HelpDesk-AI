@@ -860,20 +860,7 @@ if not st.session_state.get("authenticated", False):
                             else:
                                 st.error(f"Authentication failed: {msg}")
 
-                    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-                    
-                    with st.expander("⚡ Pre-seeded Demo Access", expanded=False):
-                        st.caption("Standard demonstration account for evaluation:")
-                        st.code("Email: alex.turner@enterprise.internal\nPassword: Password123!", language="yaml")
-                        if st.button("Fill Demo Credentials & Sign In", key="btn_demo_autofill", use_container_width=True):
-                            success, msg, user_data = auth.authenticate_user("alex.turner@enterprise.internal", "Password123!")
-                            if success and user_data:
-                                st.session_state["authenticated"] = True
-                                st.session_state["auth_user"] = user_data["full_name"]
-                                st.session_state["auth_email"] = user_data["email"]
-                                st.session_state["auth_role"] = user_data["role"]
-                                st.session_state["nav_view"] = get_nav_views_for_role(user_data["role"])[0]
-                                st.rerun()
+
 
                 else:
                     st.markdown("<h3 style='font-size: 1.15rem; font-weight: 700; color: #0f172a; margin-bottom: 2px;'>Create Your Account</h3>", unsafe_allow_html=True)
@@ -881,15 +868,14 @@ if not st.session_state.get("authenticated", False):
 
                     su_name = st.text_input("Full Employee Name", key="su_name_input", placeholder="e.g. Elena Rostova")
                     su_email = st.text_input("Corporate Email", key="su_email_input", placeholder="elena.rostova@enterprise.internal")
-                    su_role = st.selectbox(
-                        "Enterprise Role",
-                        options=[
-                            "Employee / Incident Reporter",
-                            "IT Service Desk Specialist",
-                            "SecOps Incident Analyst"
-                        ],
-                        key="su_role_select"
+                    st.text_input(
+                        "Assigned Role",
+                        value="Employee / Incident Reporter",
+                        disabled=True,
+                        key="su_role_display",
+                        help="Standard self-registration assigns standard Employee permissions. Elevated roles require administrative authorization."
                     )
+                    su_role = "Employee / Incident Reporter"
 
                     col_supwd, col_sutoggle = st.columns([4, 1])
                     with col_sutoggle:
@@ -930,7 +916,8 @@ if not st.session_state.get("authenticated", False):
                             full_name=su_name,
                             password=su_pwd,
                             confirm_password=su_confirm,
-                            role=su_role
+                            role=su_role,
+                            allow_privileged=False
                         )
                         if ok and new_user:
                             st.session_state["authenticated"] = True
@@ -1499,7 +1486,7 @@ elif st.session_state["nav_view"] == "Executive Metrics":
             <div class='metric-container'>
                 <div class='metric-label'>Policy Escalations</div>
                 <div class='metric-value' style='color: #7e22ce;'>{role_metrics['escalated']}</div>
-                <div class='metric-sub'>Human technician dispatch</div>
+                <div class='metric-sub'>Internal human review escalation</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -1739,7 +1726,7 @@ elif st.session_state["nav_view"] in ["Submit Ticket", "Triage Workbench"]:
             st.markdown(
                 f"""
                 <div class='security-banner'>
-                    <div class='security-title'>🚨 MANDATORY SECOPS SECURITY INCIDENT DISPATCH</div>
+                    <div class='security-title'>🚨 MANDATORY SECOPS SECURITY INCIDENT ESCALATION (HUMAN REVIEW REQUIRED)</div>
                     <div class='security-body'>
                         <b>Target Escalation Queue:</b> {html.escape(str(res.get('escalation_tier', 'SecOps Incident Response Team')))}<br>
                         <b>Trigger Rationale:</b> {html.escape(str(res.get('escalation_reason', 'Security policy indicator detected.')))}<br>
@@ -1881,12 +1868,12 @@ elif st.session_state["nav_view"] in ["Submit Ticket", "Triage Workbench"]:
                                 t["status"] = "User Confirmed - Resolved"
                     st.success("User confirmed troubleshooting resolved the issue. Ticket marked as Resolved.")
             with act_col2:
-                if st.button("👤 Request Human Dispatch", key="btn_req_dispatch_wb", use_container_width=True):
+                if st.button("👤 Request Human Review", key="btn_req_dispatch_wb", use_container_width=True):
                     if current_id:
                         for t in st.session_state["tickets"]:
                             if t["id"] == current_id:
-                                t["status"] = "Escalated - User Requested Dispatch"
-                    st.warning("Dispatched to human technician on-call queue.")
+                                t["status"] = "Escalated - Human Review Requested"
+                    st.warning("Incident escalated to internal human technician review queue. (External ticket dispatch is not connected).")
 
             # Output Routing Card
             st.markdown(
