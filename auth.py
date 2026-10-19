@@ -32,12 +32,44 @@ logger = logging.getLogger("helpdesk.auth")
 # Database file location
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth.db")
 
-# Server-side pepper / secret key from environment with secure fallback
-AUTH_SECRET = os.environ.get("HELPDESK_AUTH_SECRET", "helpdesk-prod-hmac-salt-secret-key-2026")
 PBKDF2_ITERATIONS = 120_000
 
 # Regular expression for email format validation (RFC-compliant standard pattern)
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$")
+
+# Standard unprivileged role assigned to self-registered users
+STANDARD_ROLE = "Employee / Incident Reporter"
+
+
+def get_auth_secret() -> str:
+    """
+    Retrieves the server-side authentication pepper / secret key.
+    Prioritizes the HELPDESK_AUTH_SECRET environment variable.
+    If not set in the environment, loads or creates a persistent 256-bit cryptographic
+    random secret in a protected local file (.auth_secret), never using a hard-coded fallback.
+    """
+    secret = os.environ.get("HELPDESK_AUTH_SECRET", "").strip()
+    if secret:
+        return secret
+
+    secret_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".auth_secret")
+    if os.path.exists(secret_file):
+        try:
+            with open(secret_file, "r", encoding="utf-8") as f:
+                stored = f.read().strip()
+                if stored:
+                    return stored
+        except Exception as e:
+            logger.warning("Could not read .auth_secret file: %s", e)
+
+    # Generate a cryptographically secure random 256-bit key and persist it locally
+    new_secret = secrets.token_hex(32)
+    try:
+        with open(secret_file, "w", encoding="utf-8") as f:
+            f.write(new_secret)
+    except Exception as e:
+        logger.warning("Could not write .auth_secret file: %s", e)
+    return new_secret
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -49,7 +81,8 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_auth_db() -> None:
     """
-    Initializes the SQLite database schema if not present and seeds the default enterprise demo account.
+    Initializes the SQLite database schema if not present.
+    Insecure demo accounts are NOT seeded automatically.
     """
     conn = get_db_connection()
     try:
@@ -67,22 +100,34 @@ def init_auth_db() -> None:
             )
         """)
         conn.commit()
+    finally:
+        conn.close()
 
-        # Seed default demonstration user if table is empty
-        cursor.execute("SELECT COUNT(*) FROM users")
-        count = cursor.fetchone()[0]
-        if count == 0:
-            demo_email = "alex.turner@enterprise.internal"
-            demo_name = "Alex Turner"
-            demo_pass = "Password123!"
-            demo_role = "IT Service Desk Specialist"
-            
-            pwd_hash, salt_hex = hash_password(demo_pass)
-            cursor.execute("""
-                INSERT INTO users (email, full_name, password_hash, salt, role, created_at, last_login)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (demo_email, demo_name, pwd_hash, salt_hex, demo_role, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
+
+def seed_demo_account(
+    email: str = "alex.turner@enterprise.internal",
+    full_name: str = "Alex Turner",
+    password: str = "Password123!",
+    role: str = "IT Service Desk Specialist"
+) -> bool:
+    """
+    Explicit helper to seed a demonstration account only when explicitly invoked.
+    Never executed automatically during system initialization.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = ?", (email.strip().lower(),))
+        if cursor.fetchone() is not None:
+            return False
+        pwd_hash, salt_hex = hash_password(password)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("""
+            INSERT INTO users (email, full_name, password_hash, salt, role, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (email.strip().lower(), full_name.strip(), pwd_hash, salt_hex, role, now_str, now_str))
+        conn.commit()
+        return True
     finally:
         conn.close()
 
@@ -95,8 +140,9 @@ def hash_password(password: str, salt_bytes: Optional[bytes] = None) -> Tuple[st
     if salt_bytes is None:
         salt_bytes = secrets.token_bytes(16)
     
-    # Combine password with server-side pepper
-    combined = f"{password}:{AUTH_SECRET}".encode("utf-8")
+    # Combine password with server-side pepper from get_auth_secret()
+    auth_secret = get_auth_secret()
+    combined = f"{password}:{auth_secret}".encode("utf-8")
     derived_key = hashlib.pbkdf2_hmac(
         "sha256",
         combined,
@@ -201,14 +247,24 @@ def register_user(
     full_name: str,
     password: str,
     confirm_password: str,
-    role: str = "Employee / Incident Reporter"
+    role: str = STANDARD_ROLE,
+    allow_privileged: bool = False
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Registers a new user with full server-side validation.
+    Prevents self-assignment of privileged roles (IT Support, Admin/SecOps)
+    unless allow_privileged is explicitly authorized.
     Returns (success_bool, message, user_dict_or_None).
     """
     clean_email = email.strip().lower()
     clean_name = full_name.strip()
+    clean_role = (role or STANDARD_ROLE).strip()
+
+    # Prevent self-assignment of privileged roles
+    from rbac import normalize_role, ROLE_EMPLOYEE
+    canonical_role = normalize_role(clean_role)
+    if canonical_role != ROLE_EMPLOYEE and not allow_privileged:
+        return False, "Self-assignment of privileged roles is not permitted. Standard accounts receive the Employee role. Contact an administrator for elevated access.", None
     
     if not clean_email or not validate_email(clean_email):
         return False, "Please enter a valid corporate email address (e.g., user@company.com).", None
@@ -241,7 +297,7 @@ def register_user(
         cursor.execute("""
             INSERT INTO users (email, full_name, password_hash, salt, role, created_at, last_login)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (clean_email, clean_name, pwd_hash, salt_hex, role, now_str, now_str))
+        """, (clean_email, clean_name, pwd_hash, salt_hex, clean_role, now_str, now_str))
         conn.commit()
 
         user_id = cursor.lastrowid
@@ -249,7 +305,7 @@ def register_user(
             "id": user_id,
             "email": clean_email,
             "full_name": clean_name,
-            "role": role,
+            "role": clean_role,
             "created_at": now_str,
             "last_login": now_str
         }
