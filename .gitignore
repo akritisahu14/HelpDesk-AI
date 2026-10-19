@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 /app.py
 /auth.db
@@ -229,3 +230,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 >>>>>>> origin/main
+=======
+>>>>>>> Stashed changes
+
+# Local database and secrets
+auth.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+
+# Python environments
+venv/
+.venv/
