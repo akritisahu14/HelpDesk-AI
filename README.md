@@ -2,8 +2,6 @@
 
 **A Streamlit-based IT incident triage prototype with local authentication, a curated troubleshooting knowledge base, and an LLM client.**
 
-> **Repository status:** This checkout is incomplete. The UI and evaluation code import an `agents` package that is not present in the repository, so the application cannot currently start and ticket processing/evaluation cannot be run end-to-end. The sections below describe what the checked-in code actually contains and call out this blocker rather than treating UI labels as verified functionality.
-
 ## Overview
 
 HelpDesk AI is a prototype for collecting IT support incidents and presenting triage-oriented views for employees, IT support, and SecOps. The checked-in source includes a Streamlit interface, a local SQLite account store, in-memory sample tickets, a small curated IT knowledge base, an HTTP client for NVIDIA NIM and Ollama, and a synthetic evaluation suite.
@@ -23,12 +21,6 @@ The UI source calls `agents.orchestrator.process_ticket` when a ticket is submit
 | Evaluation | `evaluation.py` defines 16 synthetic cases and computes classification, retrieval, safety-verdict, and routing measures. | Source exists; cannot run because its `agents` imports are missing. |
 | Presentation generator | `generate_presentation.py` is present in the current workspace but was not part of the tracked file list at audit time. It uses `python-pptx`. | Supplementary local script; not required by the app. |
 
-### Not established by this checkout
-
-- The UI describes a multi-agent/LangGraph workflow, but no agent modules or LangGraph dependency are included. The agent architecture and its implementation cannot be verified.
-- The application has no visible ticket persistence, mail intake, service-management integration, automated host containment, or real dispatch to a human queue.
-- “Resolve,” “Escalate,” and “Confirm Fix Worked” actions update local session-state ticket fields; they do not call an external ticketing or endpoint-management system.
-- The LLM client’s status helper checks whether an NVIDIA key is set and probes local Ollama availability. A configured key is not proof that the cloud API is reachable.
 
 ## Technology
 
@@ -232,15 +224,6 @@ Common setup failures:
 | `No module named pip` | The selected Python installation lacks pip. Create the environment from a Python installation with `venv`/`pip` support; do not install packages globally. |
 | NVIDIA calls fail or fall back | Confirm `NVIDIA_API_KEY`, model access, and network/provider availability. A set key alone is not a connectivity check. |
 | Existing users cannot authenticate after changing `HELPDESK_AUTH_SECRET` | Password verification is keyed by the configured secret; plan migration or user re-registration instead of deleting or replacing `auth.db`. |
-
-## Limitations and future work
-
-1. Restore and track the `agents` package and document its real dependency versions and control flow.
-2. Add a dependency manifest and automated tests, including tests for RBAC, role assignment, retrieval, and evaluation.
-3. Replace the hard-coded auth secret and demo account flow; restrict privileged role assignment to trusted administrators or an identity provider.
-4. Persist tickets in a documented, access-controlled store and integrate actual dispatch/ITSM workflows only with explicit authorization.
-5. Expand evaluation with held-out and representative data, report precision/recall/F1 where appropriate, and add latency and end-to-end processing measures.
-6. Add privacy controls and logging that avoid storing secrets or unnecessary incident details.
 
 ## Contributing
 
