@@ -1,14 +1,3 @@
-<<<<<<< Updated upstream
-<<<<<<< HEAD
-/app.py
-/auth.db
-/auth.py
-/evaluation.py
-/generate_presentation.py
-/knowledge_base.py
-/llm_client.py
-/rbac.py
-=======
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -229,9 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
->>>>>>> origin/main
-=======
->>>>>>> Stashed changes
 
 # Local database and secrets
 auth.db
